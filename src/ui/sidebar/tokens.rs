@@ -101,12 +101,14 @@ pub(crate) fn agent_rows(
                         // name or model token is not evidence of that identity.
                         AgentSidebarToken::Harness => {
                             let harness = match context.canonical_agent {
-                                Some(crate::detect::Agent::Antigravity) => "antigravity",
                                 Some(agent) => crate::detect::agent_label(agent),
                                 None => "unknown",
                             };
                             if context.agent_label == Some(harness)
-                                && row.contains(&AgentSidebarToken::Agent)
+                                && row.iter().any(|candidate| {
+                                    matches!(candidate.parts().0, AgentSidebarToken::Agent)
+                                        && candidate.style_for_value(harness).is_some()
+                                })
                             {
                                 None
                             } else {
@@ -442,6 +444,69 @@ rows = [[{ token = "$load", rules = [{ lt = 50, hide = true }] }], ["workspace"]
             agent_rows(&only_harness, context(&entry), "idle")[0][0].kind,
             ResolvedTokenKind::Agent("kiro".into())
         );
+    }
+
+    #[test]
+    fn harness_duplicate_suppression_respects_agent_style_and_visibility() {
+        let mut entry = entry();
+        entry.agent_label = Some("kiro".into());
+        entry.canonical_agent = Some(crate::detect::Agent::Kiro);
+        for (rules, visible) in [
+            ("", true),
+            ("rules = [{ equals = 'kiro', hide = true }]", false),
+            ("rules = [{ equals = 'other', hide = true }]", true),
+            (
+                "rules = [{ equals = 'kiro', hide = false }, { contains = '', hide = true }]",
+                true,
+            ),
+            (
+                "rules = [{ equals = 'kiro', hide = true }, { contains = '', hide = false }]",
+                false,
+            ),
+        ] {
+            for harness_first in [false, true] {
+                let agent = if rules.is_empty() {
+                    "{ token = 'agent', bold = true }".to_owned()
+                } else {
+                    format!("{{ token = 'agent', bold = true, {rules} }}")
+                };
+                let row = if harness_first {
+                    format!("'harness', {agent}")
+                } else {
+                    format!("{agent}, 'harness'")
+                };
+                let config: AgentsSidebarConfig =
+                    toml::from_str(&format!("rows = [[{row}]]")).unwrap();
+                let rows = agent_rows(&config, context(&entry), "idle");
+                assert_eq!(rows.len(), 1, "{row}");
+                assert_eq!(rows[0].len(), 1, "{row}");
+                assert_eq!(rows[0][0].kind, ResolvedTokenKind::Agent("kiro".into()));
+                assert_eq!(rows[0][0].style.bold, visible.then_some(true), "{row}");
+            }
+        }
+    }
+
+    #[test]
+    fn antigravity_harness_uses_canonical_label_without_duplicates() {
+        let mut entry = entry();
+        entry.canonical_agent = Some(crate::detect::Agent::Antigravity);
+        for (name, expected) in [
+            (Some("agy"), vec!["agy"]),
+            (Some("reviewer"), vec!["reviewer", "agy"]),
+            (None, vec!["agy"]),
+        ] {
+            entry.agent_label = name.map(str::to_owned);
+            let config: AgentsSidebarConfig =
+                toml::from_str("rows = [['agent', 'harness']]").unwrap();
+            let rows = agent_rows(&config, context(&entry), "idle");
+            assert_eq!(
+                rows,
+                vec![expected
+                    .into_iter()
+                    .map(|label| ResolvedToken::unstyled(ResolvedTokenKind::Agent(label.into())))
+                    .collect::<Vec<_>>()]
+            );
+        }
     }
 
     #[test]
