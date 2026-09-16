@@ -353,7 +353,7 @@ status_indicators = "symbols"
 row_gap = 0
 rows = [
   ["state_icon", "machine", "workspace", "tab"],
-  ["agent"],
+  ["agent", "harness"],
 ]
 
 [ui.sidebar.spaces]
@@ -373,6 +373,7 @@ Agent の行では、次の組み込みトークンを使えます:
 - `tab` — 利用可能な場合はタブ名。
 - `pane` — 利用可能な場合はペイン名。
 - `agent` — 検出または報告されたエージェントの表示名。
+- `harness` — 現在のランタイムハーネス。`codex`、`claude`、`kiro`、`agy`（Antigravity）など。識別できない場合は `unknown`。カスタムレイアウトでクルーメイト名の横にハーネスを表示し続けるには、このトークンを追加します。同じ行の `agent` トークンが表示されていて同じ値を示している場合、ハーネスは省略されます。
 - `terminal_title` — 安全性のための正規化後の最新の OSC 0/2 ターミナルタイトル。
 - `terminal_title_stripped` — 認識された先頭のアクティビティまたはスピナーのグリフ 1 つと、それに続く空白を除去したターミナルタイトル。
 - `$name` — `name` という名前のカスタムペインメタデータ。
