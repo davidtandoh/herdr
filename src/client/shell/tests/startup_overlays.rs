@@ -1302,6 +1302,38 @@ fn kiro_menu_checks_capability_and_uses_unique_name() {
 }
 
 #[test]
+fn kiro_menu_launch_is_advertised_by_local_client_shell_endpoint() {
+    // The local client-shell handshake advertises exactly the server's
+    // client-shell method allowlist. The launch action must be dispatchable
+    // against that real list, not only when the advertised set is unknown.
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.set_endpoint_methods(Some(
+        crate::server::client_commands::supported_client_shell_method_names()
+            .iter()
+            .map(|method| (*method).to_owned())
+            .collect(),
+    ));
+    state.open_settings_overlay();
+    if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+        settings.section = ClientSettingsSection::Integrations;
+        settings.selected = 1;
+    }
+    let launch = state.handle_input_bytes(b"\r");
+    assert!(
+        matches!(&launch.actions[..], [ClientShellAction::Endpoint { request, .. }]
+            if matches!(&request.method, crate::api::schema::Method::AgentStart(_))),
+        "launch must reach the server through an advertised method; notice: {:?}",
+        state
+            .visible_endpoint_notice
+            .as_ref()
+            .map(|notice| notice.body.clone())
+    );
+    assert!(state.overlay.is_none());
+}
+
+#[test]
 fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overlay() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
