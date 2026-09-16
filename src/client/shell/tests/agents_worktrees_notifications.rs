@@ -455,7 +455,7 @@ fn sidebar_harness_tracks_current_snapshot_and_preserves_crewmate() {
         (Some("claude"), "claude"),
         (None, "unknown"),
         (Some("kiro"), "kiro"),
-        (Some("agy"), "antigravity"),
+        (Some("agy"), "agy"),
         (Some("unrecognized"), "unknown"),
     ] {
         projected.revision += 1;
