@@ -281,16 +281,22 @@ fn print_token_rule_profiles() {
         ("background", workspaces as fn(usize) -> Vec<Workspace>),
         ("active", active_panes),
     ] {
-        for conditional in [false, true] {
-            let config: Config = toml::from_str(&format!(
+        for (scenario, settings) in [
+            ("plain", "[ui.sidebar.agents]\nrows = [['workspace']]\n[ui.sidebar.spaces]\nrows = [['workspace']]".to_owned()),
+            ("conditional", format!(
                 "[ui.sidebar.agents]\nrows = [[{{ token = 'workspace', rules = [{}] }}]]\n[ui.sidebar.spaces]\nrows = [[{{ token = 'workspace', rules = [{}] }}]]",
-                if conditional { &rules } else { "" }, if conditional { &rules } else { "" },
-            )).unwrap();
+                &rules, &rules,
+            )),
+            ("named", "[ui.sidebar.agents]\nrows = [['state_icon', 'machine', 'workspace', 'tab'], ['agent']]".to_owned()),
+            ("named with harness", "[ui.sidebar.agents]\nrows = [['state_icon', 'machine', 'workspace', 'tab'], ['agent', 'harness']]".to_owned()),
+        ] {
+            let config: Config = toml::from_str(&settings).unwrap();
             let rows = [1, 15].map(|count| {
                 let mut pipeline = RenderPipeline::with_config(build(count), &config);
                 pipeline.app.state.ensure_test_terminals();
                 for terminal in pipeline.app.state.terminals.values_mut() {
                     terminal.detected_agent = Some(crate::detect::Agent::Pi);
+                    terminal.set_agent_name("worker".into());
                 }
                 pipeline
                     .client
@@ -304,8 +310,7 @@ fn print_token_rule_profiles() {
                 (count, profile_pipeline(pipeline))
             });
             println!(
-                "token rules {label}: populated agents, rules_per_token={}",
-                if conditional { 16 } else { 0 }
+                "token rules {label}: populated agents, scenario={scenario}"
             );
             print_stage("client shell composition", &rows, |stats| stats.client);
         }

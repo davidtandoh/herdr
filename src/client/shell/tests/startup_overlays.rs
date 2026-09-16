@@ -1132,6 +1132,176 @@ fn current_release_notes_use_whats_new_without_attention_badge() {
 }
 
 #[test]
+fn kiro_menu_launch_uses_runtime_api_without_installing_hooks() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    let original_theme = state.config.theme_name.clone();
+    state.handle_input_bytes(b"j");
+    assert_ne!(state.config.theme_name, original_theme);
+    for _ in 0..4 {
+        state.handle_input_bytes(b"\t");
+    }
+    // Launch remains available while hook recommendations are loading.
+    let frame = state.compose(106, 35).expect("integrations");
+    assert!(frame_rows(&frame).join("\n").contains("Launch Kiro v3"));
+    let (rect, _) = state
+        .hits
+        .settings_choices
+        .iter()
+        .find(|(_, index)| *index == 1)
+        .unwrap();
+    state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: rect.x + 2,
+        row: rect.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    let launch = state.handle_input_bytes(b"\r");
+    let [ClientShellAction::Endpoint { request, .. }] = &launch.actions[..] else {
+        panic!("one launch request expected");
+    };
+    assert_eq!(
+        request.method,
+        crate::api::schema::Method::AgentStart(crate::api::schema::AgentStartParams {
+            name: "kiro".into(),
+            kind: "kiro".into(),
+            pane_id: "pane_1".into(),
+            args: vec!["--v3".into()],
+            timeout_ms: None,
+        })
+    );
+    assert!(state.overlay.is_none());
+    assert_eq!(state.config.theme_name, original_theme);
+    let request_id = request.id.clone();
+    state.handle_endpoint_result(
+        "boot-1",
+        &request_id,
+        Err(ClientShellEndpointError {
+            code: Some("agent_pane_busy".into()),
+            message: "Pane is busy".into(),
+        }),
+    );
+    assert!(state
+        .visible_endpoint_notice
+        .as_ref()
+        .unwrap()
+        .body
+        .contains("Pane is busy"));
+    assert!(state.handle_input_bytes(b"x").actions.is_empty());
+    assert!(state.visible_endpoint_notice.is_some());
+}
+
+#[test]
+fn kiro_menu_short_dialog_contains_actions_and_messages() {
+    let config = ClientShellConfig::from_config(&Config::default());
+    let settings = ClientSettingsOverlay {
+        section: ClientSettingsSection::Integrations,
+        selected: 1,
+        original_theme_name: config.theme_name.clone(),
+        original_palette: config.palette.clone(),
+        integrations: Vec::new(),
+        integration_messages: Vec::new(),
+        loading_integrations: true,
+        installing_integrations: false,
+    };
+    let overlay = ClientShellOverlay::Settings(settings);
+    for height in [14, 16, 20, 35] {
+        let mut buffer = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 106, height));
+        let rendered = super::super::render::render_client_overlay(
+            &mut buffer,
+            &overlay,
+            &snapshot(),
+            &[],
+            &ClientEndpointId::Local,
+            &config.keybinds,
+            &config.palette,
+        )
+        .expect("settings fits");
+        assert!(rendered
+            .settings_choices
+            .iter()
+            .any(|(_, index)| *index == 1));
+        for y in 0..height {
+            for x in 0..106 {
+                if !rendered.area.contains((x, y).into()) {
+                    assert_eq!(
+                        buffer[(x, y)].symbol(),
+                        " ",
+                        "outside dialog at {x},{y} for height {height}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn kiro_menu_no_focus_refuses_launch_and_empty_hook_list_keeps_action() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    let mut projected = snapshot();
+    projected.focused_pane_id = None;
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+        settings.section = ClientSettingsSection::Integrations;
+    }
+    state.handle_input_bytes(b"j");
+    let frame = state.compose(106, 35).expect("empty integrations");
+    assert!(frame_rows(&frame).join("\n").contains("Launch Kiro v3"));
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
+    assert!(state.overlay.is_some());
+    assert_eq!(
+        state.endpoint_error.as_deref(),
+        Some("Select an available shell pane before launching Kiro.")
+    );
+}
+
+#[test]
+fn kiro_menu_checks_capability_and_uses_unique_name() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    let mut projected = snapshot();
+    projected.agents.push(ClientShellAgent {
+        pane_id: "pane_2".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("kiro".into()),
+        display_agent: None,
+        agent: Some("kiro".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Idle,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: false,
+    });
+    state.set_snapshot(Box::new(projected));
+    state.open_settings_overlay();
+    if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+        settings.section = ClientSettingsSection::Integrations;
+        settings.selected = 1;
+    }
+    state.set_endpoint_methods(Some(Vec::new()));
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
+    assert!(state.overlay.is_some());
+    assert_eq!(
+        state.visible_endpoint_notice.as_ref().unwrap().key.code,
+        "agent.start"
+    );
+    state.set_endpoint_methods(Some(vec!["agent.start".into()]));
+    let launch = state.handle_input_bytes(b"\r");
+    assert!(
+        matches!(&launch.actions[..], [ClientShellAction::Endpoint { request, .. }]
+        if matches!(&request.method, crate::api::schema::Method::AgentStart(params)
+            if params.name == "kiro-2" && params.pane_id == "pane_1"))
+    );
+}
+
+#[test]
 fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overlay() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));

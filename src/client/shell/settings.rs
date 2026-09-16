@@ -99,7 +99,7 @@ impl ClientShellState {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
-                ClientSettingsSection::Integrations => settings.integrations.len(),
+                ClientSettingsSection::Integrations => 2,
             },
             _ => 0,
         }
@@ -222,7 +222,53 @@ impl ClientShellState {
                     outcome,
                 );
             }
+            ClientSettingsSection::Integrations if selected == 1 => {
+                self.launch_kiro(outcome);
+            }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+        }
+    }
+
+    fn launch_kiro(&mut self, outcome: &mut ClientShellInput) {
+        let Some(pane_id) = self.focused_pane_id() else {
+            self.set_endpoint_error("Select an available shell pane before launching Kiro.");
+            outcome.repaint = true;
+            return;
+        };
+        let Some(snapshot) = self.snapshot.as_deref() else {
+            return;
+        };
+        // The runtime checks shell availability and name uniqueness again.
+        let name = (1..=snapshot.agents.len() + 1)
+            .map(|index| {
+                if index == 1 {
+                    "kiro".to_owned()
+                } else {
+                    format!("kiro-{index}")
+                }
+            })
+            .find(|name| {
+                !snapshot
+                    .agents
+                    .iter()
+                    .any(|agent| agent.name.as_ref() == Some(name))
+            });
+        let Some(name) = name else {
+            return;
+        };
+        if self.push_endpoint_method_with_kind(
+            crate::api::schema::Method::AgentStart(crate::api::schema::AgentStartParams {
+                name,
+                kind: "kiro".into(),
+                pane_id,
+                args: vec!["--v3".into()],
+                timeout_ms: None,
+            }),
+            PendingEndpointKind::Generic,
+            outcome,
+        ) {
+            self.cancel_settings_overlay();
+            outcome.repaint = true;
         }
     }
 
@@ -298,9 +344,6 @@ impl ClientShellState {
                             integrations,
                         }) => {
                             settings.integrations = integrations;
-                            settings.selected = settings
-                                .selected
-                                .min(settings.integrations.len().saturating_sub(1));
                         }
                         Ok(_) => {
                             self.set_endpoint_error(

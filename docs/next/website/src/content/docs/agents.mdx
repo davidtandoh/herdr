@@ -38,6 +38,14 @@ Automatic detection works out of the box for common coding agents. The table sho
 
 Detected but less thoroughly tested: Gemini CLI and Cline. Unsupported agents still run normally as terminal processes. They just may not get rich state unless you add an integration or report state over the socket API.
 
+In this experiment fork, **Settings → Integrations → Launch Kiro v3 in focused shell pane**
+starts `kiro-cli --v3` through the existing agent runtime API. Select an available
+shell pane first. The server rejects an occupied pane. Kiro must already be on
+the server's executable search path. The action does not install Kiro or hooks.
+Kiro uses screen detection and has no Herdr session restore integration.
+Submitting a launch does not prove model selection, prompt receipt, composer
+readiness, or interrupt/exit/resume behavior.
+
 ## Status authority
 
 Herdr first detects the foreground process in each pane. After that, each pane has one status authority.
@@ -118,6 +126,12 @@ herdr agent rename reviewer --clear
 ```
 
 Targets accept a unique live agent name or the pane ID that currently hosts the agent. Terminal IDs and bare agent-kind labels are not accepted.
+
+The default sidebar shows the current harness beside the existing name,
+for example `reviewer · codex`. The `harness` token comes from runtime identity,
+not the name or model. When identity is unavailable or unrecognized, it shows
+`unknown`. A new snapshot replaces the harness when it changes. Custom sidebar
+layouts retain their configured rows; add `harness` beside `agent` to show both.
 
 ## Custom status labels
 

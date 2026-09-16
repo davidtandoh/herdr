@@ -97,6 +97,22 @@ pub(crate) fn agent_rows(
                         AgentSidebarToken::Agent => context
                             .agent_label
                             .map(|value| ResolvedTokenKind::Agent(value.to_string())),
+                        // Only runtime identity selects the harness. A display
+                        // name or model token is not evidence of that identity.
+                        AgentSidebarToken::Harness => {
+                            let harness = match context.canonical_agent {
+                                Some(crate::detect::Agent::Antigravity) => "antigravity",
+                                Some(agent) => crate::detect::agent_label(agent),
+                                None => "unknown",
+                            };
+                            if context.agent_label == Some(harness)
+                                && row.contains(&AgentSidebarToken::Agent)
+                            {
+                                None
+                            } else {
+                                Some(ResolvedTokenKind::Agent(harness.to_owned()))
+                            }
+                        }
                         AgentSidebarToken::TerminalTitle => context
                             .terminal_title
                             .map(|value| ResolvedTokenKind::TerminalTitle(value.to_string())),
@@ -397,6 +413,35 @@ rows = [[{ token = "$load", rules = [{ lt = 50, hide = true }] }], ["workspace"]
             let rows = agent_rows(&config, context(&entry), "working");
             assert_eq!(rows[0][0].kind, ResolvedTokenKind::Agent("pi".into()));
         }
+    }
+
+    #[test]
+    fn harness_token_uses_runtime_identity_and_preserves_display_name() {
+        let config: AgentsSidebarConfig = toml::from_str("rows = [['agent', 'harness']]").unwrap();
+        let encoded = toml::to_string(&config).unwrap();
+        assert_eq!(
+            toml::from_str::<AgentsSidebarConfig>(&encoded).unwrap(),
+            config
+        );
+        let mut entry = entry();
+        entry.agent_label = Some("reviewer".into());
+        entry.canonical_agent = Some(crate::detect::Agent::Kiro);
+        let rows = agent_rows(&config, context(&entry), "idle");
+        assert_eq!(rows[0][0].kind, ResolvedTokenKind::Agent("reviewer".into()));
+        assert_eq!(rows[0][1].kind, ResolvedTokenKind::Agent("kiro".into()));
+        entry.canonical_agent = None;
+        assert_eq!(
+            agent_rows(&config, context(&entry), "unknown")[0][1].kind,
+            ResolvedTokenKind::Agent("unknown".into())
+        );
+        entry.canonical_agent = Some(crate::detect::Agent::Kiro);
+        entry.agent_label = Some("kiro".into());
+        assert_eq!(agent_rows(&config, context(&entry), "idle")[0].len(), 1);
+        let only_harness: AgentsSidebarConfig = toml::from_str("rows = [['harness']]").unwrap();
+        assert_eq!(
+            agent_rows(&only_harness, context(&entry), "idle")[0][0].kind,
+            ResolvedTokenKind::Agent("kiro".into())
+        );
     }
 
     #[test]
