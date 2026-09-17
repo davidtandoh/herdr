@@ -131,6 +131,23 @@ After Can confirms the change is integrated, update the shared checkout, remove 
 
 ## Testing
 
+### Firstmate lab hosts
+
+When `/Users/davidtandoh/workspace/firstmate/bin/fm-herdr-lab.sh` exists, use
+that helper for every native Herdr experiment on the host. The running `default`
+session belongs to the fleet. Generate a non-default session with `name`, install
+an EXIT trap calling `teardown` before `provision`, and route ordinary commands
+through `run`. Use only helper `stop` or `teardown` for lifecycle operations.
+The helper owns explicit session arguments and the unchanged-default tripwire.
+Do not run integration binaries that bypass this contract, replace the installed
+app, or restart the default server. Unit tests may use `just ci 'binary(herdr)'`;
+report excluded native checks and require isolated hosted checks before delivery.
+Native agent startup needs a bounded canary plan. Model prompts, trust/login
+answers, and credential changes require separate authorization. A stand-in
+proves the Herdr UI and dispatch path, not the real agent's lifecycle.
+
+### Repository gates
+
 Use `just` recipes by default instead of invoking cargo or scripts directly.
 
 ```bash

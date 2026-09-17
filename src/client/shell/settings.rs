@@ -51,7 +51,7 @@ impl ClientShellState {
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
-            ClientSettingsSection::Integrations => 0,
+            ClientSettingsSection::Integrations | ClientSettingsSection::Launch => 0,
         }
     }
 
@@ -100,6 +100,7 @@ impl ClientShellState {
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => 2,
+                ClientSettingsSection::Launch => crate::detect::Agent::ALL.len(),
             },
             _ => 0,
         }
@@ -223,15 +224,26 @@ impl ClientShellState {
                 );
             }
             ClientSettingsSection::Integrations if selected == 1 => {
-                self.launch_kiro(outcome);
+                self.select_settings_section(ClientSettingsSection::Launch, outcome);
             }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+            ClientSettingsSection::Launch => {
+                let Some(agent) = crate::detect::Agent::ALL.get(selected).copied() else {
+                    self.set_endpoint_error("Unsupported agent launch selection.");
+                    outcome.repaint = true;
+                    return;
+                };
+                self.launch_agent(agent, outcome);
+            }
         }
     }
 
-    fn launch_kiro(&mut self, outcome: &mut ClientShellInput) {
+    fn launch_agent(&mut self, agent: crate::detect::Agent, outcome: &mut ClientShellInput) {
+        let kind = crate::detect::agent_label(agent);
         let Some(pane_id) = self.focused_pane_id() else {
-            self.set_endpoint_error("Select an available shell pane before launching Kiro.");
+            self.set_endpoint_error(format!(
+                "Select an available shell pane before launching {kind}."
+            ));
             outcome.repaint = true;
             return;
         };
@@ -242,9 +254,9 @@ impl ClientShellState {
         let name = (1..=snapshot.agents.len() + 1)
             .map(|index| {
                 if index == 1 {
-                    "kiro".to_owned()
+                    kind.to_owned()
                 } else {
-                    format!("kiro-{index}")
+                    format!("{kind}-{index}")
                 }
             })
             .find(|name| {
@@ -259,9 +271,13 @@ impl ClientShellState {
         if self.push_endpoint_method_with_kind(
             crate::api::schema::Method::AgentStart(crate::api::schema::AgentStartParams {
                 name,
-                kind: "kiro".into(),
+                kind: kind.into(),
                 pane_id,
-                args: vec!["--v3".into()],
+                args: if agent == crate::detect::Agent::Kiro {
+                    vec!["--v3".into()]
+                } else {
+                    Vec::new()
+                },
                 timeout_ms: None,
             }),
             PendingEndpointKind::Generic,

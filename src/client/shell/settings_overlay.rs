@@ -197,16 +197,71 @@ pub(super) fn render_settings_overlay(
         ClientSettingsSection::Integrations => {
             render_integrations(buffer, content, settings, palette, &mut choice_hits);
         }
+        ClientSettingsSection::Launch => {
+            let header_height = if content.height >= 6 { 3 } else { 0 };
+            if header_height > 0 {
+                put_text(
+                    buffer,
+                    content.x,
+                    content.y,
+                    content.width,
+                    "launch in the focused shell pane",
+                    Style::default().fg(palette.text),
+                );
+                put_text(
+                    buffer,
+                    content.x,
+                    content.y + 1,
+                    content.width,
+                    "requires the executable on the server; does not install hooks",
+                    Style::default().fg(palette.overlay1),
+                );
+            }
+            let visible = usize::from(content.height.saturating_sub(header_height));
+            let scroll = settings.selected.saturating_sub(visible.saturating_sub(1));
+            for (visible_index, (index, agent)) in crate::detect::Agent::ALL
+                .iter()
+                .enumerate()
+                .skip(scroll)
+                .take(visible)
+                .enumerate()
+            {
+                let label = format!(
+                    "{}{}",
+                    crate::detect::agent_label(*agent),
+                    if *agent == crate::detect::Agent::Kiro {
+                        " --v3"
+                    } else {
+                        ""
+                    }
+                );
+                let rect = Rect::new(
+                    content.x,
+                    content.y + header_height + visible_index as u16,
+                    content.width,
+                    1,
+                );
+                draw_choice(
+                    buffer,
+                    rect,
+                    &label,
+                    index == settings.selected,
+                    false,
+                    palette,
+                );
+                choice_hits.push((rect, index));
+            }
+        }
     }
 
     let installable = settings
         .integrations
         .iter()
         .any(super::super::settings::integration_needs_install);
-    let launch_kiro =
+    let choose_launch =
         settings.section == ClientSettingsSection::Integrations && settings.selected == 1;
     let show_primary =
-        settings.section != ClientSettingsSection::Integrations || installable || launch_kiro;
+        settings.section != ClientSettingsSection::Integrations || installable || choose_launch;
     let labels = if show_primary { vec![10, 12] } else { vec![12] };
     let buttons = row(inner, &labels, 2, inner.height.saturating_sub(1));
     let (primary, close) = if show_primary {
@@ -214,8 +269,10 @@ pub(super) fn render_settings_overlay(
         button(
             buffer,
             primary,
-            if launch_kiro {
+            if settings.section == ClientSettingsSection::Launch {
                 " ↵ launch "
+            } else if choose_launch {
+                " ↵ choose "
             } else if settings.section == ClientSettingsSection::Integrations {
                 " ↵ install "
             } else {
@@ -325,13 +382,13 @@ fn render_integrations(
             area.x,
             area.y + 1,
             area.width,
-            "hooks enable restore/status; Kiro uses screen detection only",
+            "hooks enable restore/status; launch is a separate action",
             Style::default().fg(palette.overlay1).bg(palette.panel_bg),
         );
     }
     for (index, label) in [
         "Install recommended hooks and plugins",
-        "Launch Kiro v3 in focused shell pane",
+        "Choose agent to launch in focused shell pane",
     ]
     .iter()
     .enumerate()

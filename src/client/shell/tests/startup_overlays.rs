@@ -1145,7 +1145,9 @@ fn kiro_menu_launch_uses_runtime_api_without_installing_hooks() {
     }
     // Launch remains available while hook recommendations are loading.
     let frame = state.compose(106, 35).expect("integrations");
-    assert!(frame_rows(&frame).join("\n").contains("Launch Kiro v3"));
+    assert!(frame_rows(&frame)
+        .join("\n")
+        .contains("Choose agent to launch"));
     let (rect, _) = state
         .hits
         .settings_choices
@@ -1158,6 +1160,13 @@ fn kiro_menu_launch_uses_runtime_api_without_installing_hooks() {
         row: rect.y,
         modifiers: KeyModifiers::empty(),
     })]);
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
+    for agent in crate::detect::Agent::ALL {
+        if agent == crate::detect::Agent::Kiro {
+            break;
+        }
+        state.handle_input_bytes(b"j");
+    }
     let launch = state.handle_input_bytes(b"\r");
     let [ClientShellAction::Endpoint { request, .. }] = &launch.actions[..] else {
         panic!("one launch request expected");
@@ -1250,12 +1259,15 @@ fn kiro_menu_no_focus_refuses_launch_and_empty_hook_list_keeps_action() {
     }
     state.handle_input_bytes(b"j");
     let frame = state.compose(106, 35).expect("empty integrations");
-    assert!(frame_rows(&frame).join("\n").contains("Launch Kiro v3"));
+    assert!(frame_rows(&frame)
+        .join("\n")
+        .contains("Choose agent to launch"));
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
     assert!(state.handle_input_bytes(b"\r").actions.is_empty());
     assert!(state.overlay.is_some());
     assert_eq!(
         state.endpoint_error.as_deref(),
-        Some("Select an available shell pane before launching Kiro.")
+        Some("Select an available shell pane before launching pi.")
     );
 }
 
@@ -1282,8 +1294,11 @@ fn kiro_menu_checks_capability_and_uses_unique_name() {
     state.set_snapshot(Box::new(projected));
     state.open_settings_overlay();
     if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
-        settings.section = ClientSettingsSection::Integrations;
-        settings.selected = 1;
+        settings.section = ClientSettingsSection::Launch;
+        settings.selected = crate::detect::Agent::ALL
+            .iter()
+            .position(|agent| *agent == crate::detect::Agent::Kiro)
+            .unwrap();
     }
     state.set_endpoint_methods(Some(Vec::new()));
     assert!(state.handle_input_bytes(b"\r").actions.is_empty());
@@ -1317,8 +1332,11 @@ fn kiro_menu_launch_is_advertised_by_local_client_shell_endpoint() {
     ));
     state.open_settings_overlay();
     if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
-        settings.section = ClientSettingsSection::Integrations;
-        settings.selected = 1;
+        settings.section = ClientSettingsSection::Launch;
+        settings.selected = crate::detect::Agent::ALL
+            .iter()
+            .position(|agent| *agent == crate::detect::Agent::Kiro)
+            .unwrap();
     }
     let launch = state.handle_input_bytes(b"\r");
     assert!(
@@ -1495,4 +1513,156 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
             ..
         })) if integration_messages == &["installed codex"]
     ));
+}
+
+#[test]
+fn launch_menu_dispatches_every_supported_agent_and_preserves_hook_catalogue() {
+    use crate::api::schema::{IntegrationInfo, IntegrationState, IntegrationTarget};
+    let kinds = [
+        "pi",
+        "claude",
+        "codex",
+        "gemini",
+        "cursor",
+        "devin",
+        "agy",
+        "cline",
+        "omp",
+        "mastracode",
+        "opencode",
+        "copilot",
+        "kimi",
+        "kiro",
+        "droid",
+        "amp",
+        "grok",
+        "hermes",
+        "kilo",
+        "qodercli",
+        "qwen",
+        "letta",
+        "maki",
+        "muse",
+    ];
+    assert_eq!(kinds.len(), crate::detect::Agent::ALL.len());
+    let hooks: Vec<_> = IntegrationTarget::ALL
+        .iter()
+        .map(|target| {
+            let label = crate::integration::integration_target_label(*target);
+            let agent =
+                crate::detect::parse_agent_label(label).expect("hook target has launch contract");
+            assert!(kinds.contains(&crate::detect::agent_label(agent)));
+            IntegrationInfo {
+                target: *target,
+                label: label.into(),
+                command: label.into(),
+                available: false,
+                state: IntegrationState::NotInstalled,
+            }
+        })
+        .collect();
+    for (index, kind) in kinds.iter().enumerate() {
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+        state.set_snapshot(Box::new(snapshot()));
+        state.set_pane_surface(surface());
+        state.open_settings_overlay();
+        state.select_settings_section(
+            ClientSettingsSection::Integrations,
+            &mut ClientShellInput::default(),
+        );
+        if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+            settings.integrations = hooks.clone();
+            settings.loading_integrations = false;
+        }
+        let frame = state.compose(106, 50).expect("full hook catalogue");
+        let text = frame_rows(&frame).join("\n");
+        for hook in &hooks {
+            assert!(
+                text.contains(&hook.label.chars().take(11).collect::<String>()),
+                "missing {}",
+                hook.label
+            );
+        }
+        state.handle_input_bytes(b"j");
+        assert!(
+            state.handle_input_bytes(b"\r").actions.is_empty(),
+            "opening chooser must not launch/install"
+        );
+        for _ in 0..index {
+            state.handle_input_bytes(b"j");
+        }
+        let frame = state.compose(106, 16).expect("short launch chooser");
+        let text = frame_rows(&frame).join("\n");
+        assert!(
+            text.contains(&format!("▸ {kind}")),
+            "selected {kind} must remain visible: {text}"
+        );
+        let rect = state
+            .hits
+            .settings_choices
+            .iter()
+            .find(|(_, choice)| *choice == index)
+            .unwrap()
+            .0;
+        let select = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: rect.x + 2,
+            row: rect.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+        assert!(
+            select.actions.is_empty(),
+            "selection must not start an agent"
+        );
+        let launch = state.handle_input_bytes(b"\r");
+        let [ClientShellAction::Endpoint { request, .. }] = &launch.actions[..] else {
+            panic!("one launch request for {kind}");
+        };
+        let crate::api::schema::Method::AgentStart(params) = &request.method else {
+            panic!("must use runtime agent.start");
+        };
+        assert_eq!(params.kind, *kind);
+        assert_eq!(params.name, *kind);
+        assert_eq!(params.pane_id, "pane_1");
+        assert_eq!(
+            params.args,
+            if *kind == "kiro" {
+                vec!["--v3"]
+            } else {
+                vec![]
+            }
+        );
+        assert!(state.overlay.is_none());
+    }
+}
+
+#[test]
+fn launch_menu_mouse_scroll_reaches_last_agent_and_invalid_selection_fails() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    state.select_settings_section(
+        ClientSettingsSection::Launch,
+        &mut ClientShellInput::default(),
+    );
+    for _ in 0..30 {
+        state.compose(106, 16).unwrap();
+        state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 50,
+            row: 8,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    }
+    let frame = state.compose(106, 16).unwrap();
+    assert!(frame_rows(&frame).join("\n").contains("▸ muse"));
+    if let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() {
+        settings.selected = usize::MAX;
+    }
+    assert!(state.handle_input_bytes(b"\r").actions.is_empty());
+    assert_eq!(
+        state.endpoint_error.as_deref(),
+        Some("Unsupported agent launch selection.")
+    );
 }

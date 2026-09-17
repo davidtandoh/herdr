@@ -38,13 +38,24 @@ Automatic detection works out of the box for common coding agents. The table sho
 
 Detected but less thoroughly tested: Gemini CLI and Cline. Unsupported agents still run normally as terminal processes. They just may not get rich state unless you add an integration or report state over the socket API.
 
-In this experiment fork, **Settings → Integrations → Launch Kiro v3 in focused shell pane**
-starts `kiro-cli --v3` through the existing agent runtime API. Select an available
-shell pane first. The server rejects an occupied pane. Kiro must already be on
-the server's executable search path. The action does not install Kiro or hooks.
-Kiro uses screen detection and has no Herdr session restore integration.
-Submitting a launch does not prove model selection, prompt receipt, composer
-readiness, or interrupt/exit/resume behavior.
+In this experiment fork, **Settings → Integrations → Choose agent to launch in focused shell pane**
+opens the shared **Launch** section. It lists all supported runtime agents,
+including Codex, Claude, Kiro, and AGY. Use the arrow keys or mouse wheel to
+select an agent, then choose **Launch**. Selection alone does not start an agent.
+
+Launch uses the existing agent runtime API and its canonical executable. Kiro
+receives `--v3`; other agents receive no additional arguments. Select an available
+shell pane first. The server rejects an occupied pane. The canonical executable
+must already be on the server's search path. A hook installation or alternate
+executable alias does not guarantee that launch will work. Unsupported server
+capabilities and runtime errors appear as notices.
+
+The existing hook/plugin catalogue and installation action remain separate.
+Launching does not install an agent or hooks. Kiro uses screen detection and has
+no Herdr session restore integration. A menu entry or submitted launch does not
+prove model selection, prompt receipt, composer readiness, or interrupt/exit/resume
+behavior. The sidebar still derives the harness from current runtime identity,
+never from the selected model or requested launch name.
 
 ## Status authority
 
