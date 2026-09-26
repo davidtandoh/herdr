@@ -1473,6 +1473,24 @@ impl ClientShellState {
             return;
         }
         if matches!(self.overlay, Some(ClientShellOverlay::Settings(_))) {
+            if matches!(
+                self.overlay,
+                Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
+                    section: ClientSettingsSection::Launch,
+                    ..
+                }))
+            ) && matches!(
+                mouse.kind,
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+            ) {
+                self.move_settings_selection(if mouse.kind == MouseEventKind::ScrollUp {
+                    -1
+                } else {
+                    1
+                });
+                outcome.repaint = true;
+                return;
+            }
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 if let Some((_, section)) = self
                     .hits

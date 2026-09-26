@@ -430,6 +430,55 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
 }
 
 #[test]
+fn sidebar_harness_tracks_current_snapshot_and_preserves_crewmate() {
+    let mut projected = snapshot();
+    projected.agents.push(ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("worker".into()),
+        display_agent: None,
+        agent: None,
+        title: Some("misleading model".into()),
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Idle,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: true,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_pane_surface(surface());
+    for (identity, expected) in [
+        (Some("codex"), "codex"),
+        (Some("claude"), "claude"),
+        (None, "unknown"),
+        (Some("kiro"), "kiro"),
+        (Some("agy"), "agy"),
+        (Some("unrecognized"), "unknown"),
+    ] {
+        projected.revision += 1;
+        projected.agents[0].agent = identity.map(str::to_owned);
+        state.set_snapshot(Box::new(projected.clone()));
+        let frame = state.compose(106, 35).expect("sidebar");
+        let text = frame_rows(&frame).join("\n");
+        assert!(text.contains(&format!("worker · {expected}")), "{text}");
+        assert!(text.contains("main"), "branch remains visible: {text}");
+        assert_eq!(state.hits.agents[0].1, "pane_1");
+        if expected != "codex" {
+            assert!(!text.contains("worker · codex"));
+        }
+    }
+    projected.agents.clear();
+    projected.revision += 1;
+    state.set_snapshot(Box::new(projected));
+    let frame = state.compose(106, 35).expect("removed agent");
+    assert!(!frame_rows(&frame).join("\n").contains("worker"));
+    assert!(state.hits.agents.is_empty());
+}
+
+#[test]
 fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
     let mut projected = snapshot();
     let mut second_pane = projected.panes[0].clone();

@@ -51,7 +51,7 @@ impl ClientShellState {
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
-            ClientSettingsSection::Integrations => 0,
+            ClientSettingsSection::Integrations | ClientSettingsSection::Launch => 0,
         }
     }
 
@@ -99,7 +99,8 @@ impl ClientShellState {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
-                ClientSettingsSection::Integrations => settings.integrations.len(),
+                ClientSettingsSection::Integrations => 2,
+                ClientSettingsSection::Launch => crate::detect::Agent::ALL.len(),
             },
             _ => 0,
         }
@@ -222,7 +223,68 @@ impl ClientShellState {
                     outcome,
                 );
             }
+            ClientSettingsSection::Integrations if selected == 1 => {
+                self.select_settings_section(ClientSettingsSection::Launch, outcome);
+            }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+            ClientSettingsSection::Launch => {
+                let Some(agent) = crate::detect::Agent::ALL.get(selected).copied() else {
+                    self.set_endpoint_error("Unsupported agent launch selection.");
+                    outcome.repaint = true;
+                    return;
+                };
+                self.launch_agent(agent, outcome);
+            }
+        }
+    }
+
+    fn launch_agent(&mut self, agent: crate::detect::Agent, outcome: &mut ClientShellInput) {
+        let kind = crate::detect::agent_label(agent);
+        let Some(pane_id) = self.focused_pane_id() else {
+            self.set_endpoint_error(format!(
+                "Select an available shell pane before launching {kind}."
+            ));
+            outcome.repaint = true;
+            return;
+        };
+        let Some(snapshot) = self.snapshot.as_deref() else {
+            return;
+        };
+        // The runtime checks shell availability and name uniqueness again.
+        let name = (1..=snapshot.agents.len() + 1)
+            .map(|index| {
+                if index == 1 {
+                    kind.to_owned()
+                } else {
+                    format!("{kind}-{index}")
+                }
+            })
+            .find(|name| {
+                !snapshot
+                    .agents
+                    .iter()
+                    .any(|agent| agent.name.as_ref() == Some(name))
+            });
+        let Some(name) = name else {
+            return;
+        };
+        if self.push_endpoint_method_with_kind(
+            crate::api::schema::Method::AgentStart(crate::api::schema::AgentStartParams {
+                name,
+                kind: kind.into(),
+                pane_id,
+                args: if agent == crate::detect::Agent::Kiro {
+                    vec!["--v3".into()]
+                } else {
+                    Vec::new()
+                },
+                timeout_ms: None,
+            }),
+            PendingEndpointKind::Generic,
+            outcome,
+        ) {
+            self.cancel_settings_overlay();
+            outcome.repaint = true;
         }
     }
 
@@ -298,9 +360,6 @@ impl ClientShellState {
                             integrations,
                         }) => {
                             settings.integrations = integrations;
-                            settings.selected = settings
-                                .selected
-                                .min(settings.integrations.len().saturating_sub(1));
                         }
                         Ok(_) => {
                             self.set_endpoint_error(

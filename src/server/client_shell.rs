@@ -544,6 +544,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn snapshot_projects_current_harness_separately_from_name() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = crate::app::App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.workspaces = vec![crate::workspace::Workspace::test_new("branch-label")];
+        app.state.ensure_test_terminals();
+        app.state.active = Some(0);
+        let terminal_id = app.state.terminals.keys().next().unwrap().clone();
+        for agent in [
+            crate::detect::Agent::Codex,
+            crate::detect::Agent::Claude,
+            crate::detect::Agent::Kiro,
+            crate::detect::Agent::Antigravity,
+        ] {
+            let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+            terminal.set_detected_state(Some(agent), crate::detect::AgentState::Idle);
+            terminal.set_agent_name("worker".into());
+            let projected = snapshot(&app, "boot", 1, None, None);
+            assert_eq!(projected.agents.len(), 1);
+            assert_eq!(
+                projected.agents[0].agent.as_deref(),
+                Some(crate::detect::agent_label(agent))
+            );
+            assert_eq!(projected.agents[0].name.as_deref(), Some("worker"));
+        }
+        app.state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .set_detected_state(None, crate::detect::AgentState::Unknown);
+        let projected = snapshot(&app, "boot", 2, None, None);
+        assert_eq!(projected.agents[0].agent, None);
+        assert_eq!(projected.agents[0].name.as_deref(), Some("worker"));
+    }
+
+    #[test]
     fn snapshot_projects_cached_release_and_update_facts() {
         let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = crate::app::App::new(

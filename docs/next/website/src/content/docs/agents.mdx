@@ -38,6 +38,25 @@ Automatic detection works out of the box for common coding agents. The table sho
 
 Detected but less thoroughly tested: Gemini CLI and Cline. Unsupported agents still run normally as terminal processes. They just may not get rich state unless you add an integration or report state over the socket API.
 
+In this experiment fork, **Settings → Integrations → Choose agent to launch in focused shell pane**
+opens the shared **Launch** section. It lists all supported runtime agents,
+including Codex, Claude, Kiro, and AGY. Use the arrow keys or mouse wheel to
+select an agent, then choose **Launch**. Selection alone does not start an agent.
+
+Launch uses the existing agent runtime API and its canonical executable. Kiro
+receives `--v3`; other agents receive no additional arguments. Select an available
+shell pane first. The server rejects an occupied pane. The canonical executable
+must already be on the server's search path. A hook installation or alternate
+executable alias does not guarantee that launch will work. Unsupported server
+capabilities and runtime errors appear as notices.
+
+The existing hook/plugin catalogue and installation action remain separate.
+Launching does not install an agent or hooks. Kiro uses screen detection and has
+no Herdr session restore integration. A menu entry or submitted launch does not
+prove model selection, prompt receipt, composer readiness, or interrupt/exit/resume
+behavior. The sidebar still derives the harness from current runtime identity,
+never from the selected model or requested launch name.
+
 ## Status authority
 
 Herdr first detects the foreground process in each pane. After that, each pane has one status authority.
@@ -118,6 +137,12 @@ herdr agent rename reviewer --clear
 ```
 
 Targets accept a unique live agent name or the pane ID that currently hosts the agent. Terminal IDs and bare agent-kind labels are not accepted.
+
+The default sidebar shows the current harness beside the existing name,
+for example `reviewer · codex`. The `harness` token comes from runtime identity,
+not the name or model. When identity is unavailable or unrecognized, it shows
+`unknown`. A new snapshot replaces the harness when it changes. Custom sidebar
+layouts retain their configured rows; add `harness` beside `agent` to show both.
 
 ## Custom status labels
 
