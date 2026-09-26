@@ -19,6 +19,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "integration.install",
     "integration.list",
     "layout.set_split_ratio",
+    "pane.clear",
     "pane.close",
     "pane.copy_motion",
     "pane.copy_search",
@@ -288,10 +289,14 @@ mod tests {
         )))
         .expect("endpoint method shape fixture");
         let mut actual = endpoint_method_shape_digests();
-        // Freeze the additive methods separately without rewriting the published fixture.
+        // Freeze additive methods separately without rewriting the published fixture.
         assert_eq!(
             actual.remove("agent.start").as_deref(),
             Some("2c70813601c631682efb857fe6286384ba1d6ddafbbb8d420ad6e548522c74a7")
+        );
+        assert_eq!(
+            actual.remove("pane.clear").as_deref(),
+            Some("0301d288ba198ddaa427dd7421c71911cccaf4ea03544531efa8b67ca21b08f6")
         );
         assert_eq!(
             actual.remove("pane.link.resolve").as_deref(),
